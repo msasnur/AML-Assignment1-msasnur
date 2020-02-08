@@ -1,0 +1,278 @@
+---
+title: "Hypertuning on IMDB dataset"
+output:
+  word_document: default
+  html_notebook:
+    highlight: textmate
+    theme: cerulean
+  html_document:
+    df_print: paged
+---
+# The IMDB dataset
+
+Load IMDB dataset
+The IMDB dataset is preloaded in the Keras
+
+```{r}
+library(keras)
+library(tensorflow)
+library(ggplot2)
+library(tidyverse)
+library(cowplot)
+imdb <- dataset_imdb(num_words = 10000)
+c(c(train_data, train_labels), c(test_data, test_labels)) %<-% imdb
+```
+
+The argument num_words = 10000 means that we will only keep the top 10,000 most frequently occurring words in the training data. Rare words will be discarded
+
+The variables train_data and test_data are lists of reviews, each review being a list of word indices (encoding a sequence of words). train_labels and test_labels are lists of 0s and 1s, where 0 stands for “negative” and 1 stands for “positive”:
+
+# Preparing the Data
+
+```{r}
+vectorize_sequences <- function(sequences, dimension = 10000) {
+  # Create an all-zero matrix of shape (len(sequences), dimension)
+  results <- matrix(0, nrow = length(sequences), ncol = dimension)
+  for (i in 1:length(sequences))
+    # Sets specific indices of results[i] to 1s
+    results[i, sequences[[i]]] <- 1
+  results
+}
+
+# Our vectorized training data
+x_train <- vectorize_sequences(train_data)
+# Our vectorized test data
+x_test <- vectorize_sequences(test_data)
+# Our vectorized labels
+y_train <- as.numeric(train_labels)
+y_test <- as.numeric(test_labels)
+set.seed(123)
+val_indices<-sample(1:nrow(x_train),nrow(x_train*(0.40)))
+x_val <- x_train[val_indices,]
+partial_x_train <- x_train[-val_indices,]
+
+y_val <- y_train[val_indices]
+partial_y_train <- y_train[-val_indices]
+
+```
+
+# Building our network and Validating our Approach
+
+Single layer network without any technique
+
+```{r}
+model <- keras_model_sequential() %>% 
+  layer_dense(units = 16, activation = "relu", input_shape = c(10000)) %>%
+  layer_dense(units = 1, activation = "sigmoid")
+
+
+model %>% compile(
+  optimizer = "rmsprop",
+  loss = "binary_crossentropy",
+  metrics = c("accuracy")
+)
+
+history <- model %>% fit(
+  partial_x_train,
+  partial_y_train,
+  epochs = 20,
+  batch_size = 512,
+  validation_data = list(x_val, y_val)
+)
+
+str(history)
+plot(history)
+
+model %>% fit(x_train, y_train, epochs = 4, batch_size = 512)
+results <- model %>% evaluate(x_test, y_test)
+results
+```
+
+Single layer network using regularization, 'mse' loss function and tanh activation
+
+```{r}
+model <- keras_model_sequential() %>% 
+  layer_dense(units = 64,  kernel_regularizer = regularizer_l2(.0001),activation = "tanh", input_shape = c(10000)) %>%
+  layer_dense(units = 1, activation = "sigmoid")
+
+model %>% compile(
+  optimizer = "rmsprop",
+  loss = "mse",
+  metrics = c("accuracy")
+)
+
+history <- model %>% fit(
+  partial_x_train,
+  partial_y_train,
+  epochs = 20,
+  batch_size = 512,
+  validation_data = list(x_val, y_val)
+)
+
+str(history)
+plot(history)
+
+model %>% fit(x_train, y_train, epochs = 5, batch_size = 512)
+results <- model %>% evaluate(x_test, y_test)
+results
+```
+
+Single layer network with regularization and drop out
+
+```{r}
+model <- keras_model_sequential() %>% 
+  layer_dense(units = 16,  kernel_regularizer = regularizer_l2(.0001),activation = "tanh", input_shape = c(10000)) %>%
+  layer_dropout(rate = 0.5) %>%
+  layer_dense(units = 1, activation = "sigmoid")
+
+model %>% compile(
+  optimizer = "rmsprop",
+  loss = "mse",
+  metrics = c("accuracy")
+)
+
+history <- model %>% fit(
+  partial_x_train,
+  partial_y_train,
+  epochs = 20,
+  batch_size = 512,
+  validation_data = list(x_val, y_val)
+)
+
+str(history)
+plot(history)
+
+model %>% fit(x_train, y_train, epochs = 7, batch_size = 512)
+results <- model %>% evaluate(x_test, y_test)
+results
+```
+
+Triple layer network without using regualrization, setting units to 32 and dropout
+
+```{r}
+model <- keras_model_sequential() %>% 
+  layer_dense(units = 32, activation = "tanh", input_shape = c(10000)) %>%
+  layer_dense(units = 32, activation = "tanh") %>%
+  layer_dense(units = 32, activation = "tanh") %>%
+  layer_dense(units = 1, activation = "sigmoid")
+
+model %>% compile(
+  optimizer = "rmsprop",
+  loss = "mse",
+  metrics = c("accuracy")
+)
+
+history <- model %>% fit(
+  partial_x_train,
+  partial_y_train,
+  epochs = 20,
+  batch_size = 512,
+  validation_data = list(x_val, y_val)
+)
+
+str(history)
+plot(history)
+
+model %>% fit(x_train, y_train, epochs = 4, batch_size = 512)
+results <- model %>% evaluate(x_test, y_test)
+results
+```
+
+Triple layer network by regualrization
+
+```{r}
+model <- keras_model_sequential() %>% 
+  layer_dense(units = 64, kernel_regularizer = regularizer_l2(.0001), activation = "tanh", input_shape = c(10000)) %>%
+  layer_dense(units = 32, kernel_regularizer = regularizer_l2(.0001), activation = "tanh") %>%
+  layer_dense(units = 32, kernel_regularizer = regularizer_l2(.0001), activation = "tanh") %>%
+  layer_dense(units = 1, activation = "sigmoid")
+
+model %>% compile(
+  optimizer = "rmsprop",
+  loss = "mse",
+  metrics = c("accuracy")
+)
+
+history <- model %>% fit(
+  partial_x_train,
+  partial_y_train,
+  epochs = 20,
+  batch_size = 512,
+  validation_data = list(x_val, y_val)
+)
+
+str(history)
+plot(history)
+
+model %>% fit(x_train, y_train, epochs = 2, batch_size = 512)
+results <- model %>% evaluate(x_test, y_test)
+results
+```
+
+Triple layer network by regualrization and dropout
+
+```{r}
+model <- keras_model_sequential() %>% 
+  layer_dense(units = 64, kernel_regularizer = regularizer_l2(.0001), activation = "tanh", input_shape = c(10000)) %>%
+  layer_dropout(rate = 0.5) %>%
+  layer_dense(units = 32, kernel_regularizer = regularizer_l2(.0001), activation = "tanh") %>%
+  layer_dropout(rate = 0.5) %>%
+  layer_dense(units = 32, kernel_regularizer = regularizer_l2(.0001), activation = "tanh") %>%
+  layer_dropout(rate = 0.5) %>%
+  layer_dense(units = 1, activation = "sigmoid")
+
+model %>% compile(
+  optimizer = "rmsprop",
+  loss = "mse",
+  metrics = c("accuracy")
+)
+
+history <- model %>% fit(
+  partial_x_train,
+  partial_y_train,
+  epochs = 20,
+  batch_size = 512,
+  validation_data = list(x_val, y_val)
+)
+
+str(history)
+plot(history)
+
+model %>% fit(x_train, y_train, epochs = 2, batch_size = 512)
+results <- model %>% evaluate(x_test, y_test)
+results
+```
+
+
+Using epochs, we train new network from scratch. Later evaluate on the test data.
+
+```{r}
+model1 <- keras_model_sequential() %>% 
+  layer_dense(units = 64, kernel_regularizer = regularizer_l2(.0001), activation = "tanh", input_shape = c(10000)) %>%
+  layer_dropout(rate = 0.5) %>%
+  layer_dense(units = 64, kernel_regularizer = regularizer_l2(.0001), activation = "tanh") %>%
+  layer_dropout(rate = 0.5) %>%
+  layer_dense(units = 64, kernel_regularizer = regularizer_l2(.0001), activation = "tanh") %>%
+  layer_dropout(rate = 0.5) %>%
+  layer_dense(units = 1, activation = "sigmoid")
+
+model1 %>% compile(
+  optimizer = "rmsprop",
+  loss = "mse",
+  metrics = c("accuracy")
+)
+history1<-model1 %>% fit(
+  x_train,
+  y_train,
+  epochs = 7,
+  batch_size = 250)
+
+modelb.df <- as.data.frame(history1$metrics)
+modelb.df <- modelb.df %>% mutate(epochs=1:n())
+p11<-ggplot(modelb.df) + geom_line(aes(x=epochs,y=loss),size=0.7,color="blue")+geom_point(aes(x=epochs,y=loss),size=1,color="blue")+ggtitle("Epochs vs Loss function ")+theme(panel.grid = element_blank(),panel.background = element_blank())+theme_classic()+geom_text(aes(epochs,loss,label=round(loss,2)),vjust=-0.2)
+p12<-ggplot(modelb.df) + geom_line(aes(x=epochs,y=accuracy),size=0.7,color="blue")+geom_point(aes(x=epochs,y=accuracy),size=1,color="blue")+ggtitle("Epochs vs Accuracy")+theme(panel.grid = element_blank(),panel.background = element_blank())+theme_classic()+geom_text(aes(epochs,accuracy,label=round(accuracy,2)),vjust=-0.2)
+plot_grid(p11,p12,nrow = 2)
+results<- model1 %>% evaluate(x_test,y_test)
+results
+```
+
